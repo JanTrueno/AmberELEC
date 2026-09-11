@@ -241,25 +241,48 @@ jobs:
           echo "::error::build failed after 3 attempts" >&2
           exit 1
 
-      - name: Locate build output
+      - name: Collect build output
         if: always()
         run: |
           set -eu
           mkdir -p out
-          find build.* -maxdepth 3 -name "Image" -o -maxdepth 3 -name "*miniloong*.dtb" 2>/dev/null \
-            | head -20 | tee out/found.txt || true
-          # .config as the build system actually generated it
-          find build.* -maxdepth 3 -path "*linux*" -name ".config" -exec cp {} out/kernel.config \; 2>/dev/null || true
-          ls -la out || true
+          # No -maxdepth: the kernel outputs live at build.*/linux-*/arch/arm64/boot/.
+          # Everything is copied into out/ and only out/ is uploaded, because
+          # globbing build.* directly makes the upload walk initramfs/, which
+          # contains 0700 dirs it cannot read (EACCES).
+          find build.*/ -name "Image" -path "*arch/arm64/boot*" \
+            -exec cp -v {} out/ \; 2>/dev/null || true
+          find build.*/ -name "rk3566-miniloong.dtb" \
+            -exec cp -v {} out/ \; 2>/dev/null || true
+          find build.*/ -maxdepth 2 -name ".config" -path "*linux*" \
+            -exec cp -v {} out/kernel.config \; 2>/dev/null || true
+          find build.*/ -maxdepth 2 -name "*.log" \
+            -exec cp -v {} out/ \; 2>/dev/null || true
+          echo "--- collected ---"
+          ls -la out
+
+      - name: Report what was built
+        if: always()
+        run: |
+          set -eu
+          {
+            echo "### MiniLoong kernel via AmberELEC build system"
+            echo ""
+            for f in out/Image out/rk3566-miniloong.dtb; do
+              if [ -f "$f" ]; then
+                echo "- \`$(basename $f)\`: $(stat -c%s "$f") bytes"
+              else
+                echo "- \`$(basename $f)\`: **missing**"
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload build output and logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: miniloong-amberelec-linux
-          path: |
-            out/
-            build.*/**/*.log
+          path: out/
           if-no-files-found: warn
 
   full-image:
