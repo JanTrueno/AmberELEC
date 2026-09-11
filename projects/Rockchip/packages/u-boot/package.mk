@@ -27,6 +27,17 @@ elif [[ "${DEVICE}" =~ RG552 ]]; then
   PKG_URL="https://github.com/u-boot/u-boot.git"
   PKG_DEPENDS_TARGET+=" atf"
   ATF_PLATFORM="rk3399"
+elif [[ "${DEVICE}" =~ MINILOONG ]]; then
+  # Generic mainline RK3566 support (quartz64-a-rk3566_defconfig) - u-boot only
+  # needs to bring up DRAM/eMMC/SD/serial and hand off to Linux, so a board-
+  # specific U-Boot port isn't required the way the kernel DTS is.
+  PKG_VERSION="866ca972d6c3cabeaf6dbac431e8e08bb30b3c8e"
+  PKG_GIT_CLONE_BRANCH=v2024.01
+  PKG_GIT_CLONE_SINGLE="yes"
+  PKG_GIT_CLONE_DEPTH="1"
+  PKG_URL="https://github.com/u-boot/u-boot.git"
+  PKG_DEPENDS_TARGET+=" atf"
+  ATF_PLATFORM="rk3568"
 fi
 
 post_patch() {
@@ -51,7 +62,7 @@ make_target() {
     echo "see './scripts/uboot_helper' for more information"
   else
     [ "${BUILD_WITH_DEBUG}" = "yes" ] && PKG_DEBUG=1 || PKG_DEBUG=0
-    if [[ "${ATF_PLATFORM}" == "rk3399" ]]; then
+    if [[ "${ATF_PLATFORM}" == "rk3399" || "${ATF_PLATFORM}" == "rk3568" ]]; then
       if [ -f "$(get_build_dir atf)/.install_pkg/usr/share/bootloader/bl31.elf" ]; then
         export BL31="$(get_build_dir atf)/.install_pkg/usr/share/bootloader/bl31.elf"
       fi
@@ -61,6 +72,8 @@ make_target() {
     if [[ "${DEVICE}" =~ RG351 ]]; then
       DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm _python_sysroot="${TOOLCHAIN}" _python_prefix=/ _python_exec_prefix=/ make HOSTCC="${HOST_CC}" HOSTLDFLAGS="-L${TOOLCHAIN}/lib" HOSTSTRIP="true" CONFIG_MKIMAGE_DTC_PATH="scripts/dtc/dtc"
     elif [[ "${DEVICE}" =~ RG552 ]]; then
+      DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm _python_sysroot="${TOOLCHAIN}" _python_prefix=/ _python_exec_prefix=/ LD_LIBRARY_PATH="${TOOLCHAIN}/lib:${LD_LIBRARY_PATH}" make HOSTCC="${HOST_CC}" HOSTCFLAGS="-I${TOOLCHAIN}/include" HOSTLDFLAGS="-L${TOOLCHAIN}/lib -Wl,-rpath,${TOOLCHAIN}/lib -lssl -lcrypto" HOSTSTRIP="true" CONFIG_MKIMAGE_DTC_PATH="scripts/dtc/dtc"
+    elif [[ "${DEVICE}" =~ MINILOONG ]]; then
       DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm _python_sysroot="${TOOLCHAIN}" _python_prefix=/ _python_exec_prefix=/ LD_LIBRARY_PATH="${TOOLCHAIN}/lib:${LD_LIBRARY_PATH}" make HOSTCC="${HOST_CC}" HOSTCFLAGS="-I${TOOLCHAIN}/include" HOSTLDFLAGS="-L${TOOLCHAIN}/lib -Wl,-rpath,${TOOLCHAIN}/lib -lssl -lcrypto" HOSTSTRIP="true" CONFIG_MKIMAGE_DTC_PATH="scripts/dtc/dtc"
     fi
   fi

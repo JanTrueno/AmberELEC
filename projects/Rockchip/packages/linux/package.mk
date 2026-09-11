@@ -10,6 +10,10 @@ if [[ "${DEVICE}" =~ (RG351|RK3326) ]]; then
 elif [[ "${DEVICE}" =~ (RG552|RK3399) ]]; then
   PKG_VERSION="0c15ff851c1d24fac588bd4427bb45b9ab88f452"
   PKG_URL="https://github.com/AmberELEC/kernel_rg552/archive/${PKG_VERSION}.tar.gz"
+elif [[ "${DEVICE}" == MINILOONG ]]; then
+  PKG_VERSION="2120c5ebc92961aaa0df412dc072bcc111a9b769"
+  # TODO: move to AmberELEC/kernel_miniloong once org admin rights allow forking there
+  PKG_URL="https://github.com/JanTrueno/kernel_miniloong/archive/${PKG_VERSION}.tar.gz"
 fi
 
 PKG_LICENSE="GPL"
@@ -18,7 +22,7 @@ PKG_DEPENDS_HOST="ccache:host openssl:host"
 PKG_DEPENDS_TARGET="toolchain linux:host cpio:host kmod:host xz:host wireless-regdb keyutils ${KERNEL_EXTRA_DEPENDS_TARGET}"
 PKG_DEPENDS_INIT="toolchain"
 PKG_NEED_UNPACK="${LINUX_DEPENDS} $(get_pkg_directory busybox)"
-PKG_LONGDESC="This package contains the kernel for the RG351P/M/V/MP and RG552"
+PKG_LONGDESC="This package contains the kernel for the RG351P/M/V/MP, RG552, and MINILOONG"
 PKG_IS_KERNEL_PKG="yes"
 PKG_STAMP="${KERNEL_TARGET} ${KERNEL_MAKE_EXTRACMD}"
 
