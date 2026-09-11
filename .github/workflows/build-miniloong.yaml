@@ -39,9 +39,13 @@ jobs:
     env:
       ARCH: arm64
       CROSS_COMPILE: aarch64-linux-gnu-
-      # Host runner jobs are not root, so the kernel tree cannot live at /kernel.
-      KDIR: ${{ runner.temp }}/kernel
     steps:
+      - name: Choose a writable kernel directory
+        # Host runner jobs are not root, so the tree cannot live at /kernel.
+        # This is set here rather than in the job `env:` because the `runner`
+        # context is not available at job level.
+        run: echo "KDIR=${RUNNER_TEMP}/kernel" >> "$GITHUB_ENV"
+
       - name: Install cross toolchain
         run: |
           set -eux
@@ -221,7 +225,7 @@ jobs:
           find build.* -maxdepth 3 -name "Image" -o -maxdepth 3 -name "*miniloong*.dtb" 2>/dev/null \
             | head -20 | tee out/found.txt || true
           # .config as the build system actually generated it
-          find build.* -maxdepth 3 -path "*linux*" -name ".config" -exec cp {} out${KDIR}.config \; 2>/dev/null || true
+          find build.* -maxdepth 3 -path "*linux*" -name ".config" -exec cp {} out/kernel.config \; 2>/dev/null || true
           ls -la out || true
 
       - name: Upload build output and logs
