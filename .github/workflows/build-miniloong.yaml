@@ -42,6 +42,7 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
+            gcc g++ libc6-dev \
             make git bc bison flex libssl-dev libelf-dev \
             python3 kmod cpio xz-utils ca-certificates curl
 
