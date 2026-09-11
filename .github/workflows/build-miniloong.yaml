@@ -225,13 +225,19 @@ jobs:
           # hosts and any one of them being briefly unreachable kills an hour of
           # work. Downloads land in sources/ and finished packages are stamped,
           # so a retry resumes rather than starting over.
+          # u-boot is built in the same step so it reuses the cross toolchain
+          # rather than paying for another hour of gcc. It exercises the whole
+          # rk3566 boot chain: binman assembling idbloader.img from the rkbin
+          # DDR blob plus SPL, and u-boot.itb carrying BL31.
           for attempt in 1 2 3; do
             if docker run --rm \
                  -v "${PWD}":/work -w /work \
                  -u "$(id -u):$(id -g)" \
                  -e HOME=/tmp \
                  amberelec-build:local \
-                 bash -c "DEVICE=MINILOONG ARCH=aarch64 ./scripts/build linux"; then
+                 bash -c "set -e
+                          DEVICE=MINILOONG ARCH=aarch64 ./scripts/build linux
+                          DEVICE=MINILOONG ARCH=aarch64 UBOOT_SYSTEM=miniloong ./scripts/build u-boot"; then
               echo "build succeeded on attempt ${attempt}"
               exit 0
             fi
@@ -258,6 +264,10 @@ jobs:
             -exec cp -v {} out/kernel.config \; 2>/dev/null || true
           find build.*/ -maxdepth 2 -name "*.log" \
             -exec cp -v {} out/ \; 2>/dev/null || true
+          # boot chain outputs from the u-boot build
+          for f in idbloader.img u-boot.itb uboot.img trust.img; do
+            find build.*/ -name "$f" -exec cp -v {} out/ \; 2>/dev/null || true
+          done
           echo "--- collected ---"
           ls -la out
 
@@ -268,7 +278,7 @@ jobs:
           {
             echo "### MiniLoong kernel via AmberELEC build system"
             echo ""
-            for f in out/Image out/rk3566-miniloong.dtb; do
+            for f in out/Image out/rk3566-miniloong.dtb out/idbloader.img out/u-boot.itb; do
               if [ -f "$f" ]; then
                 echo "- \`$(basename $f)\`: $(stat -c%s "$f") bytes"
               else
