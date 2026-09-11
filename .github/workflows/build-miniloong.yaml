@@ -1,0 +1,180 @@
+name: build-miniloong
+
+# MiniLoong Pocket 1 validation on GitHub-hosted runners.
+#
+# The upstream build-main workflow targets `runs-on: main`, a self-hosted machine
+# with a persistent workspace and warm ccache, which forks cannot use. A
+# GitHub-hosted runner has ~14GB of free disk and a hard 6h job cap, so a full
+# image build is best-effort at best. The kernel-smoke job exists to answer the
+# one question that actually blocks this port - does the 5.10 BSP kernel build
+# with our config fragment - without waiting hours for AmberELEC's own toolchain.
+
+on:
+  workflow_dispatch:
+    inputs:
+      full_image:
+        description: "Also attempt the full AmberELEC image (best effort, may hit the 6h cap)"
+        type: boolean
+        default: false
+  push:
+    branches:
+      - dev
+    paths:
+      - "projects/Rockchip/devices/MINILOONG/**"
+      - "projects/Rockchip/packages/**"
+      - "projects/Rockchip/bootloader/**"
+      - ".github/workflows/build-miniloong.yaml"
+
+jobs:
+  kernel-smoke:
+    name: Kernel + DTB smoke build
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container: ubuntu:20.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      ARCH: arm64
+      CROSS_COMPILE: aarch64-linux-gnu-
+    steps:
+      - name: Install build dependencies
+        run: |
+          set -eux
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
+            make git bc bison flex libssl-dev libelf-dev \
+            python3 kmod cpio xz-utils ca-certificates curl
+
+      - uses: actions/checkout@v4
+        name: Checkout AmberELEC
+
+      - name: Resolve pinned kernel source from linux/package.mk
+        id: kernel
+        run: |
+          set -eux
+          MK=projects/Rockchip/packages/linux/package.mk
+          # Pull the MINILOONG branch's pinned commit and repo out of package.mk
+          # so this job can never drift from what the real build uses.
+          SHA=$(grep -A3 'DEVICE.*== MINILOONG' "$MK" | grep -m1 'PKG_VERSION=' | cut -d'"' -f2)
+          URL=$(grep -A4 'DEVICE.*== MINILOONG' "$MK" | grep -m1 'PKG_URL=' | cut -d'"' -f2)
+          REPO=$(echo "$URL" | sed -E 's#https://github.com/([^/]+/[^/]+)/archive/.*#\1#')
+          test -n "$SHA" && test -n "$REPO"
+          echo "sha=$SHA"   >> $GITHUB_OUTPUT
+          echo "repo=$REPO" >> $GITHUB_OUTPUT
+
+      - name: Fetch kernel tree
+        run: |
+          set -eux
+          mkdir -p /kernel
+          curl -fsSL "https://github.com/${{ steps.kernel.outputs.repo }}/archive/${{ steps.kernel.outputs.sha }}.tar.gz" \
+            | tar xz --strip-components=1 -C /kernel
+
+      - name: Apply AmberELEC config fragment
+        run: |
+          set -eux
+          cp projects/Rockchip/devices/MINILOONG/linux/linux.aarch64.conf /kernel/.config
+          # Mirrors what linux/package.mk does: drop the fragment in as .config and
+          # let Kconfig fill in the rest.
+          make -C /kernel olddefconfig
+
+      - name: Check the symbols we actually depend on survived olddefconfig
+        run: |
+          set -eu
+          cd /kernel
+          # Kconfig silently drops anything whose dependencies are unmet, which is
+          # exactly how a device ends up booting without exfat / joystick / audio.
+          rc=0
+          for sym in \
+            CONFIG_EXFAT_FS \
+            CONFIG_JOYSTICK_SINGLEADCJOY \
+            CONFIG_BATTERY_RK817 \
+            CONFIG_CHARGER_RK817 \
+            CONFIG_SND_SOC_RK817 \
+            CONFIG_MALI_BIFROST \
+            CONFIG_DRM_ROCKCHIP \
+            CONFIG_ROCKCHIP_DW_MIPI_DSI \
+            CONFIG_ROCKCHIP_SARADC \
+            CONFIG_BACKLIGHT_PWM \
+            CONFIG_CPU_RK3568 \
+            CONFIG_RTL8723DS ; do
+            if grep -qE "^${sym}=(y|m)" .config; then
+              echo "ok      ${sym}=$(grep -m1 -E "^${sym}=" .config | cut -d= -f2)"
+            else
+              echo "DROPPED ${sym}"
+              rc=1
+            fi
+          done
+          exit $rc
+
+      - name: Build Image + MiniLoong DTB
+        run: |
+          set -eux
+          # KCFLAGS mirrors linux/package.mk - this vendor tree is noisy and is not
+          # expected to build warning-clean.
+          make -C /kernel -j"$(nproc)" KCFLAGS="-w" \
+            Image rockchip/rk3566-miniloong.dtb
+
+      - name: Summarise
+        if: always()
+        run: |
+          set -eu
+          {
+            echo "### MiniLoong kernel smoke build"
+            echo ""
+            echo "- kernel: \`${{ steps.kernel.outputs.repo }}@${{ steps.kernel.outputs.sha }}\`"
+            if [ -f /kernel/arch/arm64/boot/Image ]; then
+              echo "- Image: $(stat -c%s /kernel/arch/arm64/boot/Image) bytes"
+            else
+              echo "- Image: **not built**"
+            fi
+            if [ -f /kernel/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dtb ]; then
+              echo "- rk3566-miniloong.dtb: $(stat -c%s /kernel/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dtb) bytes"
+            else
+              echo "- rk3566-miniloong.dtb: **not built**"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload kernel config and artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: miniloong-kernel-smoke
+          path: |
+            /kernel/.config
+            /kernel/arch/arm64/boot/Image
+            /kernel/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dtb
+          if-no-files-found: warn
+
+  full-image:
+    name: Full image (best effort)
+    needs: [kernel-smoke]
+    if: inputs.full_image
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reclaim disk space
+        run: |
+          set -eux
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /usr/lib/jvm || true
+          sudo docker image prune -af || true
+          df -h /
+
+      - name: Build MINILOONG in the pinned ubuntu:20.04 image
+        run: |
+          set -eux
+          # Builds the build-image from the repo Dockerfile rather than pulling
+          # ghcr, so this works on a fork with no package permissions.
+          docker build -t amberelec-build:local .
+          DOCKER_IMAGE=amberelec-build:local make DOCKER_WORK_DIR=/work docker-MINILOONG
+
+      - name: Upload image
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmberELEC-MINILOONG
+          path: release/
+          if-no-files-found: warn
