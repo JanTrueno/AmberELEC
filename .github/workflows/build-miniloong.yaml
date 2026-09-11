@@ -221,12 +221,25 @@ jobs:
       - name: Build the linux package for MINILOONG
         run: |
           set -eux
-          docker run --rm \
-            -v "${PWD}":/work -w /work \
-            -u "$(id -u):$(id -g)" \
-            -e HOME=/tmp \
-            amberelec-build:local \
-            bash -c "DEVICE=MINILOONG ARCH=aarch64 ./scripts/build linux"
+          # Retried because the toolchain pulls sources from a lot of upstream
+          # hosts and any one of them being briefly unreachable kills an hour of
+          # work. Downloads land in sources/ and finished packages are stamped,
+          # so a retry resumes rather than starting over.
+          for attempt in 1 2 3; do
+            if docker run --rm \
+                 -v "${PWD}":/work -w /work \
+                 -u "$(id -u):$(id -g)" \
+                 -e HOME=/tmp \
+                 amberelec-build:local \
+                 bash -c "DEVICE=MINILOONG ARCH=aarch64 ./scripts/build linux"; then
+              echo "build succeeded on attempt ${attempt}"
+              exit 0
+            fi
+            echo "::warning::build attempt ${attempt} failed, retrying" >&2
+            sleep 60
+          done
+          echo "::error::build failed after 3 attempts" >&2
+          exit 1
 
       - name: Locate build output
         if: always()
