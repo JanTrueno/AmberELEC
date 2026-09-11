@@ -39,6 +39,8 @@ jobs:
     env:
       ARCH: arm64
       CROSS_COMPILE: aarch64-linux-gnu-
+      # Host runner jobs are not root, so the kernel tree cannot live at /kernel.
+      KDIR: ${{ runner.temp }}/kernel
     steps:
       - name: Install cross toolchain
         run: |
@@ -73,22 +75,22 @@ jobs:
       - name: Fetch kernel tree
         run: |
           set -eux
-          mkdir -p /kernel
+          mkdir -p ${KDIR}
           curl -fsSL "https://github.com/${{ steps.kernel.outputs.repo }}/archive/${{ steps.kernel.outputs.sha }}.tar.gz" \
-            | tar xz --strip-components=1 -C /kernel
+            | tar xz --strip-components=1 -C ${KDIR}
 
       - name: Apply AmberELEC config fragment
         run: |
           set -eux
-          cp projects/Rockchip/devices/MINILOONG/linux/linux.aarch64.conf /kernel/.config
+          cp projects/Rockchip/devices/MINILOONG/linux/linux.aarch64.conf ${KDIR}/.config
           # Mirrors what linux/package.mk does: drop the fragment in as .config and
           # let Kconfig fill in the rest.
-          make -C /kernel olddefconfig
+          make -C ${KDIR} olddefconfig
 
       - name: Check the symbols we actually depend on survived olddefconfig
         run: |
           set -eu
-          cd /kernel
+          cd ${KDIR}
           # Kconfig silently drops anything whose dependencies are unmet, which is
           # exactly how a device ends up booting without exfat / joystick / audio.
           rc=0
@@ -120,7 +122,7 @@ jobs:
           set -eux
           # The DTB is the cheap, high-signal half: it proves the board DTS and
           # its includes actually resolve against this tree.
-          make -C /kernel -j"$(nproc)" rockchip/rk3566-miniloong.dtb
+          make -C ${KDIR} -j"$(nproc)" rockchip/rk3566-miniloong.dtb
 
       - name: Build Image (best effort)
         id: image
@@ -132,7 +134,7 @@ jobs:
           # here does not necessarily indicate a problem with the port - and it
           # must not mask the config/DTB results above, which are what this job
           # exists to report. KCFLAGS mirrors linux/package.mk.
-          make -C /kernel -j"$(nproc)" KCFLAGS="-w" Image
+          make -C ${KDIR} -j"$(nproc)" KCFLAGS="-w" Image
 
       - name: Summarise
         if: always()
@@ -142,13 +144,13 @@ jobs:
             echo "### MiniLoong kernel smoke build"
             echo ""
             echo "- kernel: \`${{ steps.kernel.outputs.repo }}@${{ steps.kernel.outputs.sha }}\`"
-            if [ -f /kernel/arch/arm64/boot/Image ]; then
-              echo "- Image: $(stat -c%s /kernel/arch/arm64/boot/Image) bytes"
+            if [ -f ${KDIR}/arch/arm64/boot/Image ]; then
+              echo "- Image: $(stat -c%s ${KDIR}/arch/arm64/boot/Image) bytes"
             else
               echo "- Image: **not built** (best-effort step; runner gcc is newer than AmberELEC's)"
             fi
-            if [ -f /kernel/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dtb ]; then
-              echo "- rk3566-miniloong.dtb: $(stat -c%s /kernel/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dtb) bytes"
+            if [ -f ${KDIR}/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dtb ]; then
+              echo "- rk3566-miniloong.dtb: $(stat -c%s ${KDIR}/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dtb) bytes"
             else
               echo "- rk3566-miniloong.dtb: **not built**"
             fi
@@ -160,9 +162,9 @@ jobs:
           set -eu
           # upload-artifact only handles paths inside the workspace.
           mkdir -p out
-          cp /kernel/.config out/kernel.config 2>/dev/null || true
-          cp /kernel/arch/arm64/boot/Image out/ 2>/dev/null || true
-          cp /kernel/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dtb out/ 2>/dev/null || true
+          cp ${KDIR}/.config out/kernel.config 2>/dev/null || true
+          cp ${KDIR}/arch/arm64/boot/Image out/ 2>/dev/null || true
+          cp ${KDIR}/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dtb out/ 2>/dev/null || true
           ls -la out || true
 
       - name: Upload kernel config and artifacts
@@ -219,7 +221,7 @@ jobs:
           find build.* -maxdepth 3 -name "Image" -o -maxdepth 3 -name "*miniloong*.dtb" 2>/dev/null \
             | head -20 | tee out/found.txt || true
           # .config as the build system actually generated it
-          find build.* -maxdepth 3 -path "*linux*" -name ".config" -exec cp {} out/kernel.config \; 2>/dev/null || true
+          find build.* -maxdepth 3 -path "*linux*" -name ".config" -exec cp {} out${KDIR}.config \; 2>/dev/null || true
           ls -la out || true
 
       - name: Upload build output and logs
