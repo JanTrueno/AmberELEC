@@ -200,12 +200,23 @@ jobs:
           sudo docker image prune -af || true
           df -h /
 
-      - name: Build the AmberELEC build image
+      - name: Get the AmberELEC build image
         run: |
           set -eux
-          # Built from the repo Dockerfile rather than pulled from ghcr, so this
-          # works on a fork with no package permissions.
-          docker build -t amberelec-build:local .
+          # Prefer the image AmberELEC's own CI uses - it is public, so this works
+          # from a fork, and it avoids rebuilding the Dockerfile whose apt step has
+          # been failing on unreachable Ubuntu mirrors from GitHub runners.
+          if docker pull ghcr.io/amberelec/amberelec-build:latest; then
+            docker tag ghcr.io/amberelec/amberelec-build:latest amberelec-build:local
+          else
+            echo "ghcr pull failed, falling back to building the Dockerfile" >&2
+            for i in 1 2 3; do
+              docker build -t amberelec-build:local . && break
+              echo "docker build failed (attempt $i), retrying" >&2
+              sleep 30
+            done
+          fi
+          docker image inspect amberelec-build:local >/dev/null
 
       - name: Build the linux package for MINILOONG
         run: |
@@ -258,8 +269,11 @@ jobs:
       - name: Build MINILOONG image
         run: |
           set -eux
-          docker build -t amberelec-build:local .
-          DOCKER_IMAGE=amberelec-build:local make DOCKER_WORK_DIR=/work docker-MINILOONG
+          # Exactly what AmberELEC's own build-main workflow runs, just for a
+          # device it does not have a job for. DOCKER_IMAGE already defaults to
+          # this in the Makefile; set explicitly for clarity.
+          DOCKER_IMAGE=ghcr.io/amberelec/amberelec-build:latest \
+            make DOCKER_WORK_DIR=/work docker-MINILOONG
 
       - name: Upload image
         if: always()
