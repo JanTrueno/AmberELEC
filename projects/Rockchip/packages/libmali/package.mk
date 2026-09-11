@@ -3,12 +3,24 @@
 # Copyright (C) 2021-present AmberELEC (https://github.com/AmberELEC)
 
 PKG_NAME="libmali"
-PKG_VERSION="9b1375cfb1e54f89f4f5ae574d809cca486970f5"
-PKG_SHA256="8075c69f7c1123c91fb0021931651a3948859421a47d03762e76310bce38d45c"
 PKG_ARCH="arm aarch64"
 PKG_LICENSE="nonfree"
 PKG_SITE="https://github.com/AmberELEC/libmali"
-PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
+
+if [[ "${DEVICE}" == MINILOONG ]]; then
+  # Fork of AmberELEC/libmali carrying the bifrost g52 g29p1 blob, which is the
+  # pairing dArkOS ships against this device's 5.10 BSP kernel (its kbase driver
+  # reports g25p0-00eac0). The g2p0 blob upstream is too old to negotiate with it.
+  PKG_VERSION="8d0709c8cbc3869b8bcf0d24d5f1cc878499bffa"
+  PKG_URL="https://github.com/JanTrueno/libmali.git"
+  PKG_GIT_CLONE_BRANCH="master"
+  PKG_GIT_CLONE_SINGLE="yes"
+  PKG_GIT_CLONE_DEPTH="1"
+else
+  PKG_VERSION="9b1375cfb1e54f89f4f5ae574d809cca486970f5"
+  PKG_SHA256="8075c69f7c1123c91fb0021931651a3948859421a47d03762e76310bce38d45c"
+  PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
+fi
 PKG_DEPENDS_TARGET="toolchain libdrm"
 PKG_LONGDESC="The Mali GPU library used in Rockchip Platform"
 
@@ -36,6 +48,12 @@ post_makeinstall_target() {
 		BLOB="libmali-bifrost-g31-r13p0-gbm.so"
 	elif [ "${MALI_FAMILY}" == "t86x" ]; then
 		BLOB="libmali-midgard-t86x-r18p0-gbm.so"
+	elif [ "${MALI_FAMILY}" == "g52" ]; then
+		BLOB="libmali-bifrost-g52-g29p1.so"
+	fi
+
+	if [ -z "${BLOB}" ]; then
+		die "libmali: no blob known for MALI_FAMILY='${MALI_FAMILY}'"
 	fi
 
 	mkdir -p ${INSTALL}/usr/lib/

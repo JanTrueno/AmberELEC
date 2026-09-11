@@ -1,5 +1,5 @@
 BUILD_DIRS=build.*
-DEVICE_BUILD_DIRS=build.AmberELEC-RG*
+DEVICE_BUILD_DIRS=build.AmberELEC-RG* build.AmberELEC-MINILOONG*
 TOOLCHAIN_BUILD_DIRS=build.AmberELEC-RK*
 
 all:
@@ -45,6 +45,9 @@ RG351MP:
 
 RG552:
 	DEVICE=RG552 ARCH=aarch64 ./scripts/build_distro
+
+MINILOONG:
+	DEVICE=MINILOONG ARCH=aarch64 ./scripts/build_distro
 
 toolchain-RK3326:
 	DEVICE=RK3326 ARCH=aarch64 ./scripts/build toolchain

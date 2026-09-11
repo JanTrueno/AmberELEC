@@ -30,14 +30,14 @@ elif [[ "${DEVICE}" =~ RG552 ]]; then
 elif [[ "${DEVICE}" =~ MINILOONG ]]; then
   # Generic mainline RK3566 support (quartz64-a-rk3566_defconfig) - u-boot only
   # needs to bring up DRAM/eMMC/SD/serial and hand off to Linux, so a board-
-  # specific U-Boot port isn't required the way the kernel DTS is.
+  # specific U-Boot port isn't required the way the kernel DTS is. This matches
+  # what ROCKNIX ships for its RK3566 handhelds, which are RK817-based boards
+  # rather than actual Quartz64 hardware.
   PKG_VERSION="866ca972d6c3cabeaf6dbac431e8e08bb30b3c8e"
   PKG_GIT_CLONE_BRANCH=v2024.01
   PKG_GIT_CLONE_SINGLE="yes"
   PKG_GIT_CLONE_DEPTH="1"
   PKG_URL="https://github.com/u-boot/u-boot.git"
-  PKG_DEPENDS_TARGET+=" atf"
-  ATF_PLATFORM="rk3568"
 fi
 
 post_patch() {
@@ -62,10 +62,22 @@ make_target() {
     echo "see './scripts/uboot_helper' for more information"
   else
     [ "${BUILD_WITH_DEBUG}" = "yes" ] && PKG_DEBUG=1 || PKG_DEBUG=0
-    if [[ "${ATF_PLATFORM}" == "rk3399" || "${ATF_PLATFORM}" == "rk3568" ]]; then
+    if [[ "${ATF_PLATFORM}" == "rk3399" ]]; then
       if [ -f "$(get_build_dir atf)/.install_pkg/usr/share/bootloader/bl31.elf" ]; then
         export BL31="$(get_build_dir atf)/.install_pkg/usr/share/bootloader/bl31.elf"
       fi
+    fi
+    if [[ "${DEVICE}" =~ MINILOONG ]]; then
+      # RK3566 has no open-source DRAM init, so binman needs the Rockchip DDR
+      # blob as the TPL to assemble idbloader.img alongside u-boot.itb, and the
+      # prebuilt BL31 to pack into the FIT (same pairing ROCKNIX uses). binman
+      # runs with --allow-missing, so check both here rather than silently
+      # shipping an idbloader.img with no DRAM init in it.
+      ROCKCHIP_TPL="$(get_build_dir rkbin)/bin/rk35/rk3568_ddr_1056MHz_v1.21.bin"
+      BL31="$(get_build_dir rkbin)/bin/rk35/rk3568_bl31_v1.44.elf"
+      [ -f "${ROCKCHIP_TPL}" ] || die "u-boot: RK3566 DDR blob missing at ${ROCKCHIP_TPL}"
+      [ -f "${BL31}" ] || die "u-boot: RK3566 BL31 missing at ${BL31}"
+      export ROCKCHIP_TPL BL31
     fi
     DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm make mrproper
     DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm make $(${ROOT}/${SCRIPTS}/uboot_helper ${PROJECT} ${DEVICE} ${UBOOT_SYSTEM} config)

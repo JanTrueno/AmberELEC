@@ -9,11 +9,10 @@ if [ $DEVICE = "RG552" ]; then
   PKG_LOADER="$PKG_RKBIN/bin/rk33/rk3399_miniloader_v1.30.bin"
   PKG_BL31="$PKG_RKBIN/bin/rk33/rk3399_bl31_v1.36.elf"
 elif [ $DEVICE = "MINILOONG" ]; then
-  # RK3566 tooling identifies as rk3568 (shared die family)
+  # RK3566 boots via mainline U-Boot's SPL+FIT flow rather than the Rockchip
+  # miniloader+trust flow used by rk3326/rk3399, so PKG_DATAFILE/PKG_LOADER/
+  # PKG_BL31 are deliberately left unset - see the MINILOONG branch below.
   PKG_SOC="rk3568"
-  PKG_DATAFILE="$PKG_RKBIN/bin/rk35/rk3566_ddr_1056MHz_v1.21.bin"
-  PKG_LOADER="$PKG_RKBIN/bin/rk35/rk356x_spl_loader_ddr1056_v1.10.111.bin"
-  PKG_BL31="$PKG_RKBIN/bin/rk35/rk3568_bl31_v1.44.elf"
 else
   PKG_SOC="px30"
   PKG_DATAFILE="$PKG_RKBIN/bin/rk33/rk3326_ddr_333MHz_v1.15.bin"
@@ -23,15 +22,23 @@ fi
 
 PKG_LOAD_ADDR="0x00200000"
 
-if [ -n "$PKG_DATAFILE" -a -n "$PKG_LOADER" ]; then
-  tools/mkimage -n $PKG_SOC -T rksd -d "$PKG_DATAFILE" idbloader.img
-  cat "$PKG_LOADER" >> idbloader.img
-  cp -av idbloader.img $INSTALL/usr/share/bootloader
-fi
+if [ "$DEVICE" = "MINILOONG" ]; then
+  # binman already emitted idbloader.img (DDR blob + U-Boot SPL) and u-boot.itb
+  # (BL31 + U-Boot proper) during the u-boot build. Install the FIT as uboot.img
+  # so it lands at the 8MiB offset the image/update scripts already write to.
+  cp -av u-boot.itb uboot.img
+  cp -av idbloader.img uboot.img $INSTALL/usr/share/bootloader
+else
+  if [ -n "$PKG_DATAFILE" -a -n "$PKG_LOADER" ]; then
+    tools/mkimage -n $PKG_SOC -T rksd -d "$PKG_DATAFILE" idbloader.img
+    cat "$PKG_LOADER" >> idbloader.img
+    cp -av idbloader.img $INSTALL/usr/share/bootloader
+  fi
 
-if [ -n "$PKG_LOAD_ADDR" ]; then
-  $PKG_RKBIN/tools/loaderimage --pack --uboot u-boot-dtb.bin uboot.img $PKG_LOAD_ADDR
-  cp -av uboot.img $INSTALL/usr/share/bootloader
+  if [ -n "$PKG_LOAD_ADDR" ]; then
+    $PKG_RKBIN/tools/loaderimage --pack --uboot u-boot-dtb.bin uboot.img $PKG_LOAD_ADDR
+    cp -av uboot.img $INSTALL/usr/share/bootloader
+  fi
 fi
 
 cat >$INSTALL/usr/share/bootloader/boot.ini <<EOF

@@ -13,6 +13,11 @@ PKG_TOOLCHAIN="manual"
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib32
   cd ${PKG_BUILD}
-  tar xvfz lib32_${DEVICE}.tar.gz
+
+  # The bundles are plain armhf userland, so RK3566 devices share the RG353 one.
+  LIB32_DEVICE="${DEVICE}"
+  [ "${DEVICE}" = "MINILOONG" ] && LIB32_DEVICE="RG353"
+
+  tar xvfz lib32_${LIB32_DEVICE}.tar.gz
   cp -rfv usr/lib32/* ${INSTALL}/usr/lib32
 }

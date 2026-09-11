@@ -137,20 +137,25 @@ pre_make_target() {
   fi
 
   # Add EXFat, kinda gross but I don't want it as a module.
-  PREEXF=`pwd`
-  cd ${PKG_BUILD}/fs
-  git clone https://github.com/arter97/exfat-linux.git
-  cd exfat-linux
-  git checkout old
-  cd ${PKG_BUILD}/fs
-  if [ -d "exfat" ]
-  then
-    rm -rf exfat
+  # Skipped on MINILOONG: its 5.10 kernel already ships exfat in-tree (mainlined
+  # in 5.4), so swapping in the out-of-tree driver the older RG351/RG552 kernels
+  # need would duplicate the fs/Kconfig and fs/Makefile entries.
+  if [[ ! "${DEVICE}" =~ MINILOONG ]]; then
+    PREEXF=`pwd`
+    cd ${PKG_BUILD}/fs
+    git clone https://github.com/arter97/exfat-linux.git
+    cd exfat-linux
+    git checkout old
+    cd ${PKG_BUILD}/fs
+    if [ -d "exfat" ]
+    then
+      rm -rf exfat
+    fi
+    mv exfat-linux exfat
+    sed -i '/source "fs\/fat\/Kconfig"/a source "fs\/exfat\/Kconfig"' Kconfig
+    sed -i '/obj-$(CONFIG_FAT_FS).*+= fat\//a obj-$(CONFIG_EXFAT_FS)\t\t+= exfat\/' Makefile
+    cd ${PREEXF}
   fi
-  mv exfat-linux exfat
-  sed -i '/source "fs\/fat\/Kconfig"/a source "fs\/exfat\/Kconfig"' Kconfig
-  sed -i '/obj-$(CONFIG_FAT_FS).*+= fat\//a obj-$(CONFIG_EXFAT_FS)\t\t+= exfat\/' Makefile
-  cd ${PREEXF}
 
   export KCFLAGS="${KCFLAGS} -Wno-header-guard"
   export KCFLAGS="${KCFLAGS} -w"
