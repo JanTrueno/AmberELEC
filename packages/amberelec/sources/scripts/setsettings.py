@@ -501,6 +501,12 @@ def set_settings(rom_name: str, core: str, platform: str, controllers: str, auto
     #   GameKing = 48x32
     #   GameKing 3 = 160x160
     #   Game.com = 200x160
+    # Every device needs an entry here: 'standard' is dereferenced unconditionally
+    # further down, and until this default existed an unlisted device died with
+    # UnboundLocalError before RetroArch was ever exec'd - every game launch
+    # failed with nothing but a traceback in /tmp/logs/exec.log.
+    system_viewport = {}
+
     if device_name == "RG351P":
         system_viewport = {
             'standard': (1, 1, 479, 319),          # max-1
@@ -555,6 +561,28 @@ def set_settings(rom_name: str, core: str, platform: str, controllers: str, auto
             'gbah': (0, 0, 1200, 800),             # x5
             'arduboy': (0, 0, 1024, 512),          # x8
             'gameking': (0, 0, 1056, 704),         # x22
+        }
+
+    elif device_name == "MLP1":
+        # 720x960 portrait panel, rotated 270 degrees by SDL's RGA path, so
+        # RetroArch renders into 960x720.
+        system_viewport = {
+            'standard': (1, 1, 959, 719),          # max-1
+            'gb': (0, 0, 800, 720),                # x5
+            'gbh': (0, 0, 800, 720),               # x5
+            'gbc': (0, 0, 800, 720),               # x5
+            'gbch': (0, 0, 800, 720),              # x5
+            'supervision': (0, 0, 640, 640),       # x4
+            'gamegear': (0, 0, 800, 720),          # x5
+            'ggh': (0, 0, 800, 720),               # x5
+            'pokemini': (0, 0, 960, 640),          # x10
+            'ngp': (0, 0, 640, 608),               # x4
+            'ngpc': (0, 0, 640, 608),              # x4
+            'wonderswan': (0, 0, 896, 576),        # x4
+            'wonderswancolor': (0, 0, 896, 576),   # x4
+            'gba': (0, 0, 960, 640),               # x4
+            'gbah': (0, 0, 960, 640),              # x4
+            'arduboy': (0, 0, 896, 448),           # x7
         }
 
     bezel_cfg = None
@@ -654,10 +682,14 @@ def set_settings(rom_name: str, core: str, platform: str, controllers: str, auto
         # disable decorations
         ra_append_dict['input_overlay_enable'] = 'false'
         # set standard resolution for custom scaling
-        ra_append_dict['custom_viewport_x'] = system_viewport['standard'][0]
-        ra_append_dict['custom_viewport_y'] = system_viewport['standard'][1]
-        ra_append_dict['custom_viewport_width'] = system_viewport['standard'][2]
-        ra_append_dict['custom_viewport_height'] = system_viewport['standard'][3]
+        if 'standard' in system_viewport:
+            ra_append_dict['custom_viewport_x'] = system_viewport['standard'][0]
+            ra_append_dict['custom_viewport_y'] = system_viewport['standard'][1]
+            ra_append_dict['custom_viewport_width'] = system_viewport['standard'][2]
+            ra_append_dict['custom_viewport_height'] = system_viewport['standard'][3]
+        else:
+            logger.log(f'no viewport table for device {device_name}, '
+                       'leaving RetroArch scaling at its defaults')
 
     # Write the raappend.cfg
     logger.log('Write raappend.cfg')

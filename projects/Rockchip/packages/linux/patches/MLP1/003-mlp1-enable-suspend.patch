@@ -1,0 +1,42 @@
+Enable rockchip-suspend on MiniLoong Pocket1 so the board can wake again.
+
+rk3568.dtsi defines rockchip_suspend with status = "disabled", and nothing in
+the MiniLoong DTS enables it. The PM driver therefore starts with no sleep-mode
+or wakeup configuration and says so at boot:
+
+  rockchip-suspend: not set sleep-mode-config
+
+A power-key press then suspends into a state with no configured exit path. The
+board looks like it powered off and never comes back - SSH drops and only a
+forced power-off recovers it.
+
+The defaults already in rk3568.dtsi suit this board. dArkOS ships exactly the
+same values - sleep-mode-config 0x5ec (ARMOFF_LOGOFF | CENTER_OFF | HW_PLLS_OFF
+| PMUALIVE_32K | OSC_DIS | PMIC_LP | 32K_PVTM) and wakeup-config 0x10
+(GPIO_WKUP_EN) - and only flips the status, so do the same rather than
+duplicating the values here. The rk805 PMIC power key is already status =
+"okay" and can wake the SoC once a sleep mode is actually configured.
+--- a/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dts
+@@ -1391,6 +1391,21 @@
+ 	status = "okay";
+ };
+ 
++/*
++ * rk3568.dtsi ships this node disabled. Without it the PM driver never gets a
++ * sleep-mode or wakeup configuration - the kernel says "rockchip-suspend not
++ * set sleep-mode-config" at boot - so a suspend request puts the SoC into a
++ * state it has no configured way out of: the board appears to power off on a
++ * power-key press and never wakes.
++ *
++ * The defaults in rk3568.dtsi are already right for this board; dArkOS ships
++ * the identical values (sleep-mode-config 0x5ec, wakeup-config 0x10) and only
++ * flips the status, so do the same rather than restating them here.
++ */
++&rockchip_suspend {
++	status = "okay";
++};
++
+ &rk_rga {
+ 	status = "okay";
+ };

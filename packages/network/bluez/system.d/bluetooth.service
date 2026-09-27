@@ -15,7 +15,10 @@ ExecStart=/usr/lib/bluetooth/bluetoothd $BLUEZ_ARGS $BLUEZ_DEBUG
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
 LimitNPROC=1
 TimeoutStopSec=1s
-Restart=on-failure
+# bluetoothd exits with status 0 when the system bus drops its connection
+# ("Disconnected from D-Bus. Exiting."), which on-failure does not cover - the
+# adapter then stays dead until reboot and bonded pads can no longer reconnect.
+Restart=always
 RestartSec=2
 StartLimitInterval=0
 

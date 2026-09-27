@@ -1,0 +1,23 @@
+hciattach_rome: pass a size_t to getline()
+
+getline() takes 'size_t *' for its second argument, but hciattach_rome.c
+declares bytes_read as int. Older compilers only warned; GCC now rejects it:
+
+  tools/hciattach_rome.c:846:31: error: passing argument 2 of 'getline'
+      from incompatible pointer type [-Wincompatible-pointer-types]
+
+which fails the whole bluez build, and with it any device that sets
+BLUETOOTH_SUPPORT="yes". Give bytes_read the type getline() actually writes
+through and split the declaration, since position stays an int.
+--- a/tools/hciattach_rome.c
++++ b/tools/hciattach_rome.c
+@@ -829,7 +829,8 @@
+ 	char *line = NULL;
+ 	char *pch = NULL;
+ 	char param_str[20];
+-	int bytes_read = 0, position;
++	size_t bytes_read = 0;
++	int position;
+ 	int ret = -1;
+ 
+ 	if (!file_path || !param) {

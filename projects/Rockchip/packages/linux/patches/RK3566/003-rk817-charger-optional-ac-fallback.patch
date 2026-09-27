@@ -1,0 +1,50 @@
+rk817-charger: let boards opt into AC limits for the PMIC plug-in fallback.
+
+rockchip,pmic-plugin-usb-fallback handles boards whose USB PHY never
+classifies the attached source (SDP/DCP/CDP): when the PMIC sees VBUS but the
+extcon has no charger type, charging starts anyway at the USB-port input limit
+of 450mA. On a board where the PHY can never classify anything, that caps
+every wall charger at 450mA as well.
+
+Add rockchip,pmic-plugin-fallback-ac so such a board can use the AC charger
+parameters (max_input_current) in that fallback instead. The rk817's input
+voltage regulation (min_input_voltage) still throttles the current if a weak
+source cannot supply it. Boards without the property keep the USB limit.
+
+--- a/drivers/power/supply/rk817_charger.c	2026-09-27 12:19:14.870294124 +0200
++++ b/drivers/power/supply/rk817_charger.c	2026-09-27 12:19:14.885295368 +0200
+@@ -284,6 +284,7 @@
+ 	bool extcon;
+ 	bool validate_charger_with_pmic_plugin;
+ 	bool pmic_plugin_usb_fallback;
++	bool pmic_plugin_fallback_ac;
+ 	int gate_function_disable;
+ };
+ 
+@@ -1097,11 +1098,14 @@
+ 		 * not provided an SDP/DCP/CDP classification. Use the conservative
+ 		 * USB charger current limit rather than leaving charging disabled.
+ 		 */
++		charger = charge->pdata->pmic_plugin_fallback_ac ?
++			  USB_TYPE_AC_CHARGER : USB_TYPE_USB_CHARGER;
+ 		dev_warn(charge->dev,
+-			 "VBUS present without extcon charger type; using USB fallback\n");
++			 "VBUS present without extcon charger type; using %s fallback\n",
++			 charger == USB_TYPE_AC_CHARGER ? "AC" : "USB");
+ 
+-		charge->usb_charger = USB_TYPE_USB_CHARGER;
+-		rk817_charge_set_chrg_param(charge, USB_TYPE_USB_CHARGER);
++		charge->usb_charger = charger;
++		rk817_charge_set_chrg_param(charge, charger);
+ 	}
+ }
+ 
+@@ -1421,6 +1425,8 @@
+ 		of_property_read_bool(np, "rockchip,validate-charger-with-pmic-plugin");
+ 	pdata->pmic_plugin_usb_fallback =
+ 		of_property_read_bool(np, "rockchip,pmic-plugin-usb-fallback");
++	pdata->pmic_plugin_fallback_ac =
++		of_property_read_bool(np, "rockchip,pmic-plugin-fallback-ac");
+ 
+ 	ret = of_property_read_u32(np, "max_chrg_current",
+ 				   &pdata->max_chrg_current);

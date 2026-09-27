@@ -1,0 +1,24 @@
+--- a/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dts
+@@ -1467,7 +1467,6 @@
+ 	cap-mmc-highspeed;
+ 	cap-sd-highspeed;
+ 	disable-wp;
+-	sd-uhs-sdr104;
+ 	vmmc-supply = <&vcc_sd>;
+ 	vqmmc-supply = <&vccio_sd>;
+ 	pinctrl-names = "default";
+@@ -1525,6 +1524,13 @@
+ 	status = "okay";
+ };
+ 
++/* UART2 is the console this port boots on (console=ttyS2). rk3566.dtsi
++ * leaves it disabled, so without this ttyS2 never registers, /dev/console
++ * cannot be opened and init dies with no output at all. */
++&uart2 {
++	status = "okay";
++};
++
+ &uart1 {
+ 	status = "okay";
+ 	pinctrl-names = "default";

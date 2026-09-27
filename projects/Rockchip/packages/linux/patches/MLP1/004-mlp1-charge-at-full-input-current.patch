@@ -1,0 +1,24 @@
+Charge the MiniLoong Pocket1 at its full input current.
+
+The board routes VBUS only to the rk817, so the USB PHY never classifies the
+charger and the PMIC plug-in fallback holds every source to the 450mA
+USB-port limit - about 1.7W, slow enough that charging barely outpaces use.
+Opt into the AC-limit fallback so it charges at max_input_current (1.5A).
+
+--- a/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dts	2026-09-27 12:19:14.873294373 +0200
++++ b/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dts	2026-09-27 12:19:14.886295451 +0200
+@@ -1009,6 +1009,14 @@
+ 			extcon = <&usb2phy0>;
+ 			rockchip,validate-charger-with-pmic-plugin;
+ 			rockchip,pmic-plugin-usb-fallback;
++			/*
++			 * VBUS only reaches the PMIC on this board, so the USB PHY
++			 * never classifies the charger and every source would be
++			 * held to the 450mA USB-port limit. Charge at the
++			 * max_input_current instead; min_input_voltage makes the
++			 * rk817 back off if a weak source such as a PC port sags.
++			 */
++			rockchip,pmic-plugin-fallback-ac;
+ 		};
+ 
+ 		rk817_codec: codec {

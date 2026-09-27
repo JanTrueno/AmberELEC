@@ -1,0 +1,29 @@
+Restore the "Controller & Bluetooth Settings" main menu entry.
+
+GuiMenu.cpp adds this entry unconditionally in the #if BATOCERA branch, but
+AmberELEC builds with BATOCERA off, and in the #else branch the same addEntry
+call is wrapped in a comment along with an unused "CONFIGURE INPUT" fallback -
+so the entry, and everything under it (controller mapping, and the Bluetooth
+pairing/device-list/toggle items gated on batocera-bluetooth existing), never
+appears on any AmberELEC device.
+
+getControllersSettingsLabel() returns a compile-time label with no dependency
+on Bluetooth being present, and the Bluetooth-specific rows inside the screen
+are each individually gated on ApiSystem::isScriptingSupported(BLUETOOTH), so
+adding this unconditionally is exactly as safe here as it already is in the
+BATOCERA branch.
+
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -269,10 +269,7 @@
+ 
+ 		addEntry(_("USER INTERFACE SETTINGS").c_str(), true, [this] { openUISettings(); }, "iconUI");
+ 
+-		/*if (ApiSystem::getInstance()->isScriptingSupported(ApiSystem::GAMESETTINGS))
+-			addEntry(GuiControllersSettings::getControllersSettingsLabel(), true, [window] { GuiControllersSettings::openControllersSettings(window); }, "iconControllers");
+-		else
+-			addEntry(_("CONFIGURE INPUT"), true, [this] { openConfigInput(); }, "iconControllers");*/
++		addEntry(GuiControllersSettings::getControllersSettingsLabel(), true, [window] { GuiControllersSettings::openControllersSettings(window); }, "iconControllers");
+ 
+ 		addEntry(_("SOUND SETTINGS").c_str(), true, [this] { openSoundSettings(); }, "iconSound");
+ 

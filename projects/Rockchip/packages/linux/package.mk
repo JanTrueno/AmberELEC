@@ -10,6 +10,10 @@ if [[ "${DEVICE}" =~ (RG351|RK3326) ]]; then
 elif [[ "${DEVICE}" =~ (RG552|RK3399) ]]; then
   PKG_VERSION="0c15ff851c1d24fac588bd4427bb45b9ab88f452"
   PKG_URL="https://github.com/AmberELEC/kernel_rg552/archive/${PKG_VERSION}.tar.gz"
+elif [[ "${DEVICE}" =~ (MLP1|RK3566) ]]; then
+  PKG_VERSION="fb587af1bbabb45903dadfb07db2eaf494ad1a00"
+  # TODO: move to AmberELEC/kernel_miniloong once org admin rights allow forking there
+  PKG_URL="https://github.com/JanTrueno/kernel_miniloong/archive/${PKG_VERSION}.tar.gz"
 fi
 
 PKG_LICENSE="GPL"
@@ -18,7 +22,7 @@ PKG_DEPENDS_HOST="ccache:host openssl:host"
 PKG_DEPENDS_TARGET="toolchain linux:host cpio:host kmod:host xz:host wireless-regdb keyutils ${KERNEL_EXTRA_DEPENDS_TARGET}"
 PKG_DEPENDS_INIT="toolchain"
 PKG_NEED_UNPACK="${LINUX_DEPENDS} $(get_pkg_directory busybox)"
-PKG_LONGDESC="This package contains the kernel for the RG351P/M/V/MP and RG552"
+PKG_LONGDESC="This package contains the kernel for the RG351P/M/V/MP, RG552, and MLP1"
 PKG_IS_KERNEL_PKG="yes"
 PKG_STAMP="${KERNEL_TARGET} ${KERNEL_MAKE_EXTRACMD}"
 
@@ -28,6 +32,13 @@ fi
 
 if [[ "${DEVICE}" == RG552 ]]; then
   PKG_PATCH_DIRS="${DEVICE}"
+fi
+
+if [[ "${DEVICE}" =~ (MLP1|RK3566) ]]; then
+  # RK3566 holds the fixes any rk3566 board needs (dw_mmc descriptor ring, rk817
+  # fuel gauge); the per-device dir holds the ones that edit that board's DTS.
+  # A second rk3566 device only has to add its own dir.
+  PKG_PATCH_DIRS="RK3566 ${DEVICE}"
 fi
 
 PKG_KERNEL_CFG_FILE=$(kernel_config_path) || die
@@ -132,21 +143,33 @@ pre_make_target() {
     sed -i "s|CONFIG_EXTRA_FIRMWARE=.*|CONFIG_EXTRA_FIRMWARE=\"${FW_LIST}\"|" ${PKG_BUILD}/.config
   fi
 
-  # Add EXFat, kinda gross but I don't want it as a module.
-  PREEXF=`pwd`
-  cd ${PKG_BUILD}/fs
-  git clone https://github.com/arter97/exfat-linux.git
-  cd exfat-linux
-  git checkout old
-  cd ${PKG_BUILD}/fs
-  if [ -d "exfat" ]
-  then
-    rm -rf exfat
+  # Firmware the device needs built into the kernel (listed in its
+  # CONFIG_EXTRA_FIRMWARE), for drivers that probe before the rootfs exists.
+  if [ -d "${PROJECT_DIR}/${PROJECT}/devices/${DEVICE}/firmware" ]; then
+    mkdir -p ${PKG_BUILD}/external-firmware
+    cp -a ${PROJECT_DIR}/${PROJECT}/devices/${DEVICE}/firmware/* ${PKG_BUILD}/external-firmware
   fi
-  mv exfat-linux exfat
-  sed -i '/source "fs\/fat\/Kconfig"/a source "fs\/exfat\/Kconfig"' Kconfig
-  sed -i '/obj-$(CONFIG_FAT_FS).*+= fat\//a obj-$(CONFIG_EXFAT_FS)\t\t+= exfat\/' Makefile
-  cd ${PREEXF}
+
+  # Add EXFat, kinda gross but I don't want it as a module.
+  # Skipped on MLP1: its 5.10 kernel already ships exfat in-tree (mainlined
+  # in 5.4), so swapping in the out-of-tree driver the older RG351/RG552 kernels
+  # need would duplicate the fs/Kconfig and fs/Makefile entries.
+  if [[ ! "${DEVICE}" =~ MLP1 ]]; then
+    PREEXF=`pwd`
+    cd ${PKG_BUILD}/fs
+    git clone https://github.com/arter97/exfat-linux.git
+    cd exfat-linux
+    git checkout old
+    cd ${PKG_BUILD}/fs
+    if [ -d "exfat" ]
+    then
+      rm -rf exfat
+    fi
+    mv exfat-linux exfat
+    sed -i '/source "fs\/fat\/Kconfig"/a source "fs\/exfat\/Kconfig"' Kconfig
+    sed -i '/obj-$(CONFIG_FAT_FS).*+= fat\//a obj-$(CONFIG_EXFAT_FS)\t\t+= exfat\/' Makefile
+    cd ${PREEXF}
+  fi
 
   export KCFLAGS="${KCFLAGS} -Wno-header-guard"
   export KCFLAGS="${KCFLAGS} -w"
@@ -159,11 +182,26 @@ pre_make_target() {
   fi
 }
 
-make_target() {
-  kernel_make modules
+install_kernel_modules() {
   kernel_make INSTALL_MOD_PATH=${INSTALL}/$(get_kernel_overlay_dir) modules_install
+  # modules_install can stop after copying modules.order without failing the
+  # build, which ships an image with no loadable modules (no WiFi, among others).
+  if [ -z "$(find ${INSTALL}/$(get_kernel_overlay_dir)/lib/modules -name '*.ko' -print -quit)" ]; then
+    die "linux: modules_install installed no kernel modules"
+  fi
   rm -f ${INSTALL}/$(get_kernel_overlay_dir)/lib/modules/*/build
   rm -f ${INSTALL}/$(get_kernel_overlay_dir)/lib/modules/*/source
+}
+
+make_target() {
+  # MLP1's 5.10 kernel generates modules.builtin while linking vmlinux, and
+  # modules_install cannot run without it - but vmlinux can only be linked after
+  # the initramfs below exists. MLP1 needs no modules in its initramfs, so it
+  # installs them after the kernel build instead.
+  kernel_make modules
+  if [[ "${DEVICE}" != MLP1 ]]; then
+    install_kernel_modules
+  fi
 
   if [ "${PKG_BUILD_PERF}" = "yes" ] ; then
     ( cd tools/perf
@@ -218,6 +256,19 @@ make_target() {
   # file with symbols from built-in and external modules.
   # Without that it'll contain only the symbols from the kernel
   kernel_make ${KERNEL_TARGET} ${KERNEL_MAKE_EXTRACMD} modules
+
+  # kernel_make's exit status is not checked anywhere above, and make_target
+  # returns the status of its *last* command - so a failed kernel build still got
+  # stamped as built. The breakage then surfaced much later, and far from its
+  # cause, as "depmod: could not load System.map" during image assembly. Fail
+  # here instead, where the kernel log still says what actually went wrong.
+  if [ ! -f "System.map" -o ! -f "arch/${TARGET_KERNEL_ARCH}/boot/${KERNEL_TARGET}" ]; then
+    die "ERROR: kernel build produced no System.map / ${KERNEL_TARGET} - see ${BUILD}/.log_linux_target.log"
+  fi
+
+  if [[ "${DEVICE}" == MLP1 ]]; then
+    install_kernel_modules
+  fi
 
   if [ -n "${KERNEL_UIMAGE_TARGET}" ] ; then
     # determine compression used for kernel image

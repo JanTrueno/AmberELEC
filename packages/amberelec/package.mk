@@ -32,7 +32,16 @@ else
   PKG_EMUS+=" advancemame ppssppsa amiberry hatarisa openbor scummvmsa solarus hypseus-singe ecwolf lzdoom gzdoom raze drastic duckstation mupen64plussa piemu yabasanshiroSA"
 fi
 
-PKG_TOOLS="bash dialog grep wget ffmpeg libjpeg-turbo common-shaders glsl-shaders MC util-linux xmlstarlet sixaxis jslisten evtest mpv bluetool rs97-commander-sdl2 jslisten gnupg gzip valgrind strace gdb apitrace odroidgoa-utils rs97-commander-sdl2 textviewer 351files rclone syncthing plymouth-lite imagemagick jstest-sdl sdljoytest evdev-joystick gptokeyb fbgrab"
+PKG_TOOLS="bash dialog grep wget ffmpeg libjpeg-turbo common-shaders glsl-shaders MC util-linux xmlstarlet sixaxis jslisten evtest mpv bluetool rs97-commander-sdl2 jslisten gnupg gzip valgrind strace gdb apitrace rs97-commander-sdl2 textviewer 351files rclone syncthing plymouth-lite imagemagick jstest-sdl sdljoytest evdev-joystick gptokeyb fbgrab"
+
+# odroidgoa-utils drives the OGA headphone/volume GPIO sensing and, with its
+# enable-oga-sleep dependency, exists only as a per-device package under
+# projects/${PROJECT}/devices/${DEVICE}/packages. Referencing it unconditionally
+# aborts build-plan generation on any device that does not ship it.
+if [ -d "${ROOT}/projects/${PROJECT}/devices/${DEVICE}/packages/odroidgoa-utils" ]; then
+  PKG_TOOLS+=" odroidgoa-utils"
+fi
+
 PKG_RETROPIE_DEP="pyudev six git dbus-python coreutils"
 PKG_DEPENDS_TARGET+=" ${PKG_TOOLS} ${PKG_RETROPIE_DEP} ${PKG_EMUS} ports webui"
 
@@ -80,6 +89,8 @@ makeinstall_target() {
     cp ${INSTALL}/usr/config/distribution/configs/distribution.conf.351v ${INSTALL}/usr/config/distribution/configs/distribution.conf
   elif [ "${DEVICE}" == "RG552" ]; then
     cp ${INSTALL}/usr/config/distribution/configs/distribution.conf.552  ${INSTALL}/usr/config/distribution/configs/distribution.conf
+  elif [ "${DEVICE}" == "MLP1" ]; then
+    cp ${INSTALL}/usr/config/distribution/configs/distribution.conf.mlp1 ${INSTALL}/usr/config/distribution/configs/distribution.conf
   fi
 
   sed -i "s/system.hostname=AmberELEC/system.hostname=${DEVICE}/g" ${INSTALL}/usr/config/distribution/configs/distribution.conf
@@ -107,6 +118,11 @@ makeinstall_target() {
     cp -r ${PKG_DIR}/overlay-v/* ${INSTALL}/usr/share/retroarch-overlays
   elif [ "${DEVICE}" == "RG552" ]; then
     cp -r ${PKG_DIR}/overlay-552/* ${INSTALL}/usr/share/retroarch-overlays
+  else
+    # No overlay set for this device yet. An empty directory does not survive
+    # into the image, and tmp-overlays.mount uses this path as the overlayfs
+    # lowerdir - so without a placeholder the mount fails -ENOENT every boot.
+    touch ${INSTALL}/usr/share/retroarch-overlays/.keep
   fi
 
   mkdir -p ${INSTALL}/usr/share/libretro-database
@@ -145,6 +161,15 @@ post_install() {
     cp -f  ${PKG_DIR}/clocks/RK3326/clocklimits ${INSTALL}/etc
   elif [[ "${DEVICE}" == "RG552" ]]; then
     cp -f  ${PKG_DIR}/clocks/RK3399/clocklimits ${INSTALL}/etc
+  elif [[ "${DEVICE}" == "MLP1" ]]; then
+    cp -f  ${PKG_DIR}/clocks/RK3566/clocklimits ${INSTALL}/etc
+  fi
+  # set_perf() sources /etc/clocklimits with '.', and a failed '.' is fatal in
+  # a non-interactive shell - it kills autostart.sh at the 'performance' call
+  # on line 12, so /var/lock/start.games is never created and emustation.service
+  # is skipped on its ConditionPathExists. Never ship a device without this file.
+  if [ ! -f "${INSTALL}/etc/clocklimits" ]; then
+    die "amberelec: no clocklimits for DEVICE=${DEVICE}; autostart.sh would die in set_perf()"
   fi
 
   echo "" >${INSTALL}/etc/issue

@@ -12,7 +12,12 @@ PKG_LONGDESC="Simple DirectMedia Layer is a cross-platform development library d
 
 PKG_DEPENDS_TARGET="${PKG_DEPENDS_TARGET} libdrm ${OPENGLES} librga"
 
-if [ "${DEVICE}" = "RG351P" ] || [ "${DEVICE}" = "RG552" ]; then
+if [ "${DEVICE}" = "RG351P" ] || [ "${DEVICE}" = "RG552" ] || [ "${DEVICE}" = "MLP1" ]; then
+  # These panels scan portrait but sit in a landscape chassis, so KMSDRM renders
+  # into an offscreen GBM buffer and RGA-blits it 270 degrees onto the scanout
+  # buffer. Doing it here rather than in ES means RetroArch and the standalone
+  # emulators come out the right way up too. MiniLoong is 720x960; RGA2 and
+  # librga are both present.
   PKG_PATCH_DIRS="rotation"
 fi
 

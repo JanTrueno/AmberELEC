@@ -1,0 +1,79 @@
+Present the MiniLoong Pocket1 pad as a GO-Super Gamepad.
+
+AmberELEC's controller configs - SDL game controller mappings, RetroArch
+autoconfig, EmulationStation, the standalone emulators and the hotkey
+scripts - are written for the RG552's pad, "GO-Super Gamepad", which uses the
+same singleadc-joypad driver. A pad that reports the same name, product ID and
+button indexes gets all of them without any per-device configuration.
+
+This board reported itself as "retrogame_joypad" (product 0x1101) and used
+BTN_SELECT/BTN_START/BTN_THUMBL/BTN_MODE where the GO-Super pad has F1-F5
+(BTN_TRIGGER_HAPPY1-5). SDL numbers buttons by the codes present, so every
+index after R2 was shifted and standalone emulators had no mapping at all.
+
+Match the node name, joypad-name, product and codes: select -> F1, start ->
+F2, L3 -> F3, MODE -> F5. The board has no right-stick click (F4), so advertise
+that code as a placeholder (see the singleadcjoy placeholder-codes patch) to
+keep MODE on F5's index. The face buttons, shoulders, D-pad and stick already
+matched.
+
+--- a/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dts	2026-09-27 18:53:30.797505049 +0200
++++ b/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dts	2026-09-27 19:26:38.644330823 +0200
+@@ -243,7 +243,7 @@
+ 		};
+ 	};
+ 	
+-	joypad: singleadc-joypad {
++	joypad: odroidgo3-joypad {
+ 		/*
+ 		 * Requires patched singleadcjoy.c with Miniloong direct-adc mode.
+ 		 *
+@@ -266,8 +266,14 @@
+ 		/* pwms = <&pwm5 0 10000 0>; */
+ 		pwms = <&pwm2 0 10000 0>;
+ 
+-		joypad-name = "retrogame_joypad";
+-		joypad-product = <0x1101>;
++		joypad-name = "GO-Super Gamepad";
++		joypad-product = <0x1100>;
++		/*
++		 * The GO-Super layout has a right-stick click (F4) this board
++		 * lacks. Advertise its code with no GPIO behind it so MODE lands
++		 * on F5's index like on the RG552, not on F4's.
++		 */
++		linux,placeholder-codes = <BTN_TRIGGER_HAPPY4>;
+ 		joypad-revision = <0x0100>;
+ 
+ 		/*
+@@ -355,19 +361,19 @@
+ 		sw9 {
+ 			gpios = <&gpio4 RK_PA2 GPIO_ACTIVE_LOW>;
+ 			label = "SELECT";
+-			linux,code = <BTN_SELECT>;
++			linux,code = <BTN_TRIGGER_HAPPY1>;
+ 		};
+ 
+ 		sw10 {
+ 			gpios = <&gpio4 RK_PA3 GPIO_ACTIVE_LOW>;
+ 			label = "START";
+-			linux,code = <BTN_START>;
++			linux,code = <BTN_TRIGGER_HAPPY2>;
+ 		};
+ 
+ 		sw11 {
+ 			gpios = <&gpio4 RK_PA6 GPIO_ACTIVE_LOW>;
+ 			label = "MODE";
+-			linux,code = <BTN_MODE>;
++			linux,code = <BTN_TRIGGER_HAPPY5>;
+ 		};
+ 
+ 		sw12 {
+@@ -397,7 +403,7 @@
+ 		sw16 {
+ 			gpios = <&gpio2 RK_PC5 GPIO_ACTIVE_LOW>;
+ 			label = "LEFT JOYSTICK MIDDLE";
+-			linux,code = <BTN_THUMBL>;
++			linux,code = <BTN_TRIGGER_HAPPY3>;
+ 		};
+ 	};
+ 

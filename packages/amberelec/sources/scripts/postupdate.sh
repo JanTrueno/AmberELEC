@@ -516,6 +516,10 @@ elif [ "$(cat /usr/config/.OS_ARCH)" == "RG351V" ] || [ "$(cat /usr/config/.OS_A
 	cp -f /usr/config/splash/splash-640.png /storage/.config/emulationstation/resources/logo.png
 elif [ "$(cat /usr/config/.OS_ARCH)" == "RG552" ]; then
 	cp -f /usr/config/splash/splash-1920l.png /storage/.config/emulationstation/resources/logo.png
+elif [ "$(cat /usr/config/.OS_ARCH)" == "MLP1" ]; then
+	# Unrotated: SDL already rotates on this device, so the landscape asset is
+	# the right one here - see the matching branch in userconfig-setup.
+	cp -f /usr/config/splash/splash-960x720.png /storage/.config/emulationstation/resources/logo.png
 fi
 
 ## clear faulty lines from distribution.conf

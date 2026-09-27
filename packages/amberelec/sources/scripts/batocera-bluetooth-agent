@@ -7,9 +7,33 @@ import dbus
 import dbus.service
 import dbus.mainloop.glib
 try:
-  from gi.repository import GObject
+  from gi.repository import GLib
+  MainLoop = GLib.MainLoop
 except ImportError:
-  import gobject as GObject
+  # No PyGObject in the image: run libglib's main loop directly. dbus-python's
+  # DBusGMainLoop only needs the default GLib context iterated.
+  import ctypes
+  _glib = ctypes.CDLL("libglib-2.0.so.0")
+  _glib.g_main_loop_new.restype = ctypes.c_void_p
+  _glib.g_main_loop_new.argtypes = [ctypes.c_void_p, ctypes.c_int]
+  _glib.g_main_loop_run.argtypes = [ctypes.c_void_p]
+  _glib.g_main_loop_quit.argtypes = [ctypes.c_void_p]
+  _SOURCE_FUNC = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p)
+  _glib.g_timeout_add.argtypes = [ctypes.c_uint, _SOURCE_FUNC, ctypes.c_void_p]
+
+  class MainLoop(object):
+    def __init__(self):
+      self._loop = _glib.g_main_loop_new(None, 0)
+      # Python signal handlers (SIGUSR1/2 start/stop discovery) only run when
+      # control returns to the interpreter; this tick makes sure it does.
+      self._tick = _SOURCE_FUNC(lambda data: 1)
+      _glib.g_timeout_add(200, self._tick, None)
+
+    def run(self):
+      _glib.g_main_loop_run(self._loop)
+
+    def quit(self):
+      _glib.g_main_loop_quit(self._loop)
 import bluezutils
 import time
 import os
@@ -49,9 +73,9 @@ def connect_device(path, address, properties, forceConnect):
 
   rproperties = {}
   # Get the adapter name and bt mac
-  for key, value in properties.iteritems():
+  for key, value in properties.items():
     if type(value) is dbus.String:
-      value = unicode(value).encode('ascii', 'replace')
+      value = str(value)
     rproperties[key] = value
 
   trusted   = rproperties["Trusted"]
@@ -93,11 +117,19 @@ def doParing(address, devName, shortDevName):
   logging.info("Pairing... (" + devName + ")")
   logging_status("Pairing " + shortDevName + "...")
   device = bluezutils.find_device(address)
+  # An inquiry scan running alongside the page starves it on single-antenna
+  # combo chips and pairing ends in "Page Timeout"; doConnect already does this.
+  if gdiscovering:
+    logging.info("Stop discovery")
+    gadapter.StopDiscovery()
   try:
     device.Pair()
   except Exception as e:
-    logging.info("Pairing failed (" + devName + ")")
+    logging.info("Pairing failed (" + devName + "): " + str(e))
     logging_status("Pairing failed (" + shortDevName + ")")
+    if gdiscovering:
+      logging.info("Start discovery")
+      gadapter.StartDiscovery()
 
 def doConnect(address, devName, shortDevName):
   global gadapter
@@ -194,7 +226,7 @@ def interfaces_added(path, interfaces):
   properties = interfaces["org.bluez.Device1"]
 
   if path in gdevices:
-    gdevices[path] = dict(gdevices[path].items() + properties.items())
+    gdevices[path] = {**gdevices[path], **properties}
   else:
     gdevices[path] = properties
 
@@ -208,7 +240,7 @@ def properties_changed(interface, changed, invalidated, path):
     return
 
   if path in gdevices:
-    gdevices[path] = dict(gdevices[path].items() + changed.items())
+    gdevices[path] = {**gdevices[path], **changed}
   else:
     gdevices[path] = changed
 
@@ -232,12 +264,28 @@ def properties_changed(interface, changed, invalidated, path):
   if "Address" in gdevices[path]:
     connect_device(path, gdevices[path]["Address"], gdevices[path], False)
 
+def set_discoverable(enabled):
+  # Pads commonly answer our page by paging us straight back, and pairing then
+  # completes on that incoming link. The kernel only accepts it while the
+  # adapter is connectable, and bluez drops a failed bonding attempt's accept
+  # list entry just before it arrives - so stay discoverable (which implies
+  # connectable) for as long as a pairing scan runs.
+  try:
+    props = dbus.Interface(bus.get_object("org.bluez", gadapter.object_path), "org.freedesktop.DBus.Properties")
+    if enabled:
+      props.Set("org.bluez.Adapter1", "Pairable", True)
+      props.Set("org.bluez.Adapter1", "DiscoverableTimeout", dbus.UInt32(0))
+    props.Set("org.bluez.Adapter1", "Discoverable", enabled)
+  except Exception as e:
+    logging.info("unable to set discoverable={}: {}".format(enabled, e))
+
 def user_signal_start_discovery(signum, frame):
   global gdiscovering
   try:
     if gdiscovering == False:
       gdiscovering = True
       logging.info("Start discovery (signal)")
+      set_discoverable(True)
       gadapter.StartDiscovery()
   except:
     pass
@@ -249,6 +297,7 @@ def user_signal_stop_discovery(signum, frame):
       gdiscovering = False
       logging.info("Stop discovery (signal)")
       gadapter.StopDiscovery()
+      set_discoverable(False)
   except:
     pass
 
@@ -335,7 +384,7 @@ if __name__ == '__main__':
   
   om = dbus.Interface(bus.get_object("org.bluez", "/"), "org.freedesktop.DBus.ObjectManager")
   objects = om.GetManagedObjects()
-  for path, interfaces in objects.iteritems():
+  for path, interfaces in objects.items():
     if "org.bluez.Device1" in interfaces:
       gdevices[path] = interfaces["org.bluez.Device1"]
     if "org.bluez.Adapter1" in interfaces:
@@ -357,5 +406,5 @@ if __name__ == '__main__':
   signal.signal(signal.SIGUSR1, user_signal_start_discovery)
   signal.signal(signal.SIGUSR2, user_signal_stop_discovery)
   
-  mainloop = GObject.MainLoop()
+  mainloop = MainLoop()
   mainloop.run()

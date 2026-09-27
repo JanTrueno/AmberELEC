@@ -45,7 +45,12 @@ if [ -e /storage/.please_resize_me ] ; then
     StartProgress spinner "Resizing partition...   " "parted -s -a optimal -m ${DISK} resizepart 2 7GiB &>/dev/null"
     StartProgress spinner "Checking file system... " "e2fsck -f -p ${PART} &>/dev/null"
     StartProgress spinner "Resizing file system... " "resize2fs ${PART} &>/dev/null"
-    GAMESSTART="$(echo $(parted -m ${DISK} print all | awk 'BEGIN {FS=":"} /^2/ {gsub ("[A-Z]",""); print $3}') + 17 | bc)"
+    # "print all" enumerates every block device, not just ${DISK}. On devices
+    # with eMMC alongside the SD card (e.g. MLP1) that also lists mmcblk0
+    # and its boot partitions, and the /^2/ filter then matches a partition-2
+    # line belonging to the wrong disk - yielding a nonsense offset such as
+    # "16.8" and "bc: bad expression". Restrict it to the disk being resized.
+    GAMESSTART="$(echo $(parted -m ${DISK} print | awk 'BEGIN {FS=":"} /^2/ {gsub ("[A-Z]",""); print $3}') + 17 | bc)"
     StartProgress spinner "Creating exFAT partition..." "parted -s -a optimal -m ${DISK} mkpart primary ntfs ${GAMESSTART}MB 100% &>/dev/null"
     partprobe &>/dev/null
     StartProgress spinner "Formatting exFAT partition..." "mkfs.exfat -n GAMES ${DISK}p3 &>/dev/null"

@@ -762,7 +762,19 @@ mount_games() {
       /usr/bin/busybox mkdir -p /storage/roms >/dev/null 2>&1
     fi
 
-    for DEV in mmcblk1p3 mmcblk1p1 mmcblk1 mmcblk0p3
+    # The games partition is p3 on the boot medium. The older entries here are
+    # wrong on any device that has eMMC alongside the SD card (e.g. MLP1):
+    # mmcblk1p1 is our own FAT boot partition and mmcblk0p3 belongs to the
+    # stock firmware on eMMC - blkid reports neither as exfat/ext4, so init
+    # declares "Unsupported games filesystem" and powers the device off before
+    # it ever reaches userspace.
+    # $DEVICE comes from the devicetree model (set at the top of this script),
+    # so it is available before /storage is populated.
+    case "${DEVICE}" in
+      *MINILOONG*) GAMES_DEVS="mmcblk1p3" ;;
+      *)           GAMES_DEVS="mmcblk1p3 mmcblk1p1 mmcblk1 mmcblk0p3" ;;
+    esac
+    for DEV in ${GAMES_DEVS}
     do
       if [ -e "/dev/${DEV}" ] && [ ! -e "/storage/.please_resize_me" ]
       then

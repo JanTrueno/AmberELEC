@@ -61,6 +61,13 @@ makeinstall_target() {
         ln -sf /usr/config/emulationstation/es_systems.cfg ${INSTALL}/etc/emulationstation/es_systems.cfg
 
         cp -rf ${PKG_DIR}/config/*.cfg ${INSTALL}/usr/config/emulationstation
+
+        if [ "${DEVICE}" == "MLP1" ]; then
+          # With no "Master" control, ES takes the first element reporting a
+          # playback volume, which on this rk817 codec is 'ADC PGA Gain' (the
+          # mic preamp). Point it at the DAC so the slider and volume popup work.
+          sed -i 's|^</config>|\t<string name="AudioDevice" value="DAC"/>\n</config>|' ${INSTALL}/usr/config/emulationstation/es_settings.cfg
+        fi
 }
 
 post_install() {

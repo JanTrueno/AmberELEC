@@ -3,10 +3,13 @@
 
 PKG_NAME="edid-decode"
 PKG_VERSION="15df4aebf06da579241c58949493b866139d0e2b"
-PKG_SHA256="58743c8ba768134ef1421e1ce9f4edf0eafdae29377fe5b8f4cb285f16dc142e"
 PKG_LICENSE="None"
 PKG_SITE="https://git.linuxtv.org/edid-decode.git/"
-PKG_URL="https://git.linuxtv.org/edid-decode.git/snapshot/${PKG_VERSION}.tar.xz"
+# cgit snapshots are disabled on git.linuxtv.org: every /snapshot/ request returns
+# HTTP 400 with the repo index page, current HEAD included. Clone and check out
+# the pinned commit instead. Git packages carry no PKG_SHA256; the commit SHA in
+# PKG_VERSION is the integrity check.
+PKG_URL="https://git.linuxtv.org/edid-decode.git"
 PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="Decode EDID data in human-readable format"
 

@@ -1,0 +1,41 @@
+Enable the MiniLoong Pocket1 external speaker amplifier.
+
+The board gates its speaker through an amplifier enabled by gpio0 RK_PC0. That
+pin appears three times in the DTS and is dead in all three: commented out in
+the rk817 codec node, commented out inside a disabled block, and present on the
+mangmi-powerctrl node which is status = "disabled". Nothing ever drives it, so
+the pin floats low and the amplifier stays powered off.
+
+The result is silent playback that looks entirely healthy from software -
+'Playback Path' can be set to SPK, DAC volume reads 80%, and RetroArch holds
+/dev/snd/pcmC0D0p open - with no sound at all. Driving the pin high by hand
+from sysfs restores audio immediately, confirming the amplifier is the only
+thing missing.
+
+Hand it to the codec driver instead of a board hack: rk817_codec.c picks it up
+as an optional "spk-ctl" gpiod and toggles it from rk817_codec_ctl_gpio() when
+the playback path changes, so the speaker is also muted correctly once
+headphone detection routes audio away from it.
+
+--- a/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3566-miniloong.dts
+@@ -1024,8 +1024,17 @@
+ 			hp-volume = <20>;
+ 			spk-volume = <3>;
+ 			out-l2spk-r2hp;
+-			/* Miniloong external speaker amp enable */
+-			//spk-ctl-gpios = <&gpio0 RK_PC0 GPIO_ACTIVE_HIGH>;
++			/*
++			 * External speaker amp enable. Without this the codec
++			 * drives its output into an amplifier that is never
++			 * powered, so playback runs with correct mixer state
++			 * and a busy PCM but makes no sound at all. The codec
++			 * driver takes it as an optional "spk-ctl" gpiod and
++			 * toggles it from rk817_codec_ctl_gpio() on playback
++			 * path changes, so the speaker also mutes properly
++			 * when headphones are inserted.
++			 */
++			spk-ctl-gpios = <&gpio0 RK_PC0 GPIO_ACTIVE_HIGH>;
+ 			/* Miniloong headphone detect */
+ 			//hp-det-gpios = <&gpio4 RK_PC6 GPIO_ACTIVE_HIGH>;
+ 			status = "okay";

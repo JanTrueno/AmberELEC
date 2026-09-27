@@ -14,12 +14,23 @@ then
   ## cp -iRp /usr/config/* /storage/.config/ &>/dev/null
   ## ignore es_systems.cfg and switch to rsync
   rsync -a --ignore-existing --exclude=es-theme-art-book-next --exclude=es_systems.cfg /usr/config/* /storage/.config/
+  # The glob above never matches dotfiles, so .OS_ARCH - which drastic, gzdoom,
+  # lzdoom, raze, solarus, ecwolf, yabasanshiro and lastgame.sh all read from
+  # /storage/.config - would never be copied. Do it explicitly.
+  cp -f /usr/config/.OS_ARCH /storage/.config/.OS_ARCH
   if [ "$(cat /usr/config/.OS_ARCH)" == "RG351P" ]; then
     cp -f /usr/config/splash/splash-480l.png /storage/.config/emulationstation/resources/logo.png
   elif [ "$(cat /usr/config/.OS_ARCH)" == "RG351V" ] || [ "$(cat /usr/config/.OS_ARCH)" == "RG351MP" ]; then
     cp -f /usr/config/splash/splash-640.png /storage/.config/emulationstation/resources/logo.png
   elif [ "$(cat /usr/config/.OS_ARCH)" == "RG552" ]; then
     cp -f /usr/config/splash/splash-1920l.png /storage/.config/emulationstation/resources/logo.png
+  elif [ "$(cat /usr/config/.OS_ARCH)" == "MLP1" ]; then
+    # EmulationStation draws this through SDL, which on the rotated devices is
+    # already rotating for us - so it needs the UNROTATED landscape asset, not
+    # the pre-rotated one show_splash.sh blits straight to /dev/fb0. Same reason
+    # RG351P takes splash-480l and RG552 takes splash-1920l. The visible area
+    # here is 960x720, so the 4:3 splash-640 matches its aspect exactly.
+    cp -f /usr/config/splash/splash-960x720.png /storage/.config/emulationstation/resources/logo.png
   fi
   touch /storage/.configured
 fi

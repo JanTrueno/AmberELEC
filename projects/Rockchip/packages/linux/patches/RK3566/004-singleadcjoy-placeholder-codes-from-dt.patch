@@ -1,0 +1,54 @@
+singleadcjoy: take placeholder key codes from the device tree.
+
+The driver unconditionally advertised BTN_THUMBR so a board without a
+right-stick click still got the button indexes of the RGB20Pro's layout, which
+is what dArkOS's SDL mappings expect. SDL numbers buttons by the advertised key
+codes, so that phantom code shifts every later index on any board targeting a
+different layout: with the GO-Super Gamepad layout AmberELEC's configs use, it
+lands between R2 and the D-pad and moves the D-pad, select and start by one.
+
+Read the codes to advertise from an optional "linux,placeholder-codes" property
+instead. Boards that need none get none; a board missing a button of its target
+layout lists that button's code.
+
+--- a/drivers/input/joystick/singleadcjoy.c	2026-09-27 19:26:20.132757358 +0200
++++ b/drivers/input/joystick/singleadcjoy.c	2026-09-27 19:26:20.152759058 +0200
+@@ -1163,21 +1163,24 @@
+ 	}
+ 
+ 	/*
+-	 * dArkOS/RGB20Pro SDL mapping compatibility:
+-	 *
+-	 * RGB20Pro advertises BTN_THUMBR even when Miniloong may not have
+-	 * a physical right-stick click. SDL enumerates joystick buttons from
+-	 * the advertised evdev key capabilities. Without BTN_THUMBR, Miniloong
+-	 * maps:
+-	 *   dpup:b12, dpdown:b13, dpleft:b14, dpright:b15
+-	 *
+-	 * RGB20Pro maps:
+-	 *   rightstick:b12, dpup:b13, dpdown:b14, dpleft:b15, dpright:b16
+-	 *
+-	 * Advertise BTN_THUMBR so the button indexes match RGB20Pro.
+-	 * No event is generated unless a DTS GPIO also reports BTN_THUMBR.
++	 * SDL numbers joystick buttons by the key codes a device advertises, so a
++	 * board missing a button its target layout has (e.g. no right-stick click)
++	 * shifts every later index. "linux,placeholder-codes" advertises such codes
++	 * without a GPIO behind them - no event is ever reported for them - so the
++	 * indexes match the layout the board's configs were written for.
+ 	 */
+-	input_set_capability(input, EV_KEY, BTN_THUMBR);
++	{
++		int i, count = device_property_count_u32(dev, "linux,placeholder-codes");
++
++		if (count > 0) {
++			u32 *codes = devm_kcalloc(dev, count, sizeof(*codes), GFP_KERNEL);
++
++			if (codes && !device_property_read_u32_array(dev,
++					"linux,placeholder-codes", codes, count))
++				for (i = 0; i < count; i++)
++					input_set_capability(input, EV_KEY, codes[i]);
++		}
++	}
+ 
+ 	if (joypad->auto_repeat)
+ 		__set_bit(EV_REP, input->evbit);

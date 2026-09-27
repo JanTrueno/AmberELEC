@@ -27,6 +27,17 @@ elif [[ "${DEVICE}" =~ RG552 ]]; then
   PKG_URL="https://github.com/u-boot/u-boot.git"
   PKG_DEPENDS_TARGET+=" atf"
   ATF_PLATFORM="rk3399"
+elif [[ "${DEVICE}" =~ (MLP1|RK3566) ]]; then
+  # Generic mainline RK3566 support (quartz64-a-rk3566_defconfig) - u-boot only
+  # needs to bring up DRAM/eMMC/SD/serial and hand off to Linux, so a board-
+  # specific U-Boot port isn't required the way the kernel DTS is. This matches
+  # what ROCKNIX ships for its RK3566 handhelds, which are RK817-based boards
+  # rather than actual Quartz64 hardware.
+  PKG_VERSION="866ca972d6c3cabeaf6dbac431e8e08bb30b3c8e"
+  PKG_GIT_CLONE_BRANCH=v2024.01
+  PKG_GIT_CLONE_SINGLE="yes"
+  PKG_GIT_CLONE_DEPTH="1"
+  PKG_URL="https://github.com/u-boot/u-boot.git"
 fi
 
 post_patch() {
@@ -63,11 +74,30 @@ make_target() {
         export BL31="$(get_build_dir atf)/.install_pkg/usr/share/bootloader/bl31.elf"
       fi
     fi
+    if [[ "${DEVICE}" =~ (MLP1|RK3566) ]]; then
+      # RK3566 has no open-source DRAM init, so binman needs the Rockchip DDR
+      # blob as the TPL to assemble idbloader.img alongside u-boot.itb, and the
+      # prebuilt BL31 to pack into the FIT. binman runs with --allow-missing, so
+      # check both here rather than silently shipping an idbloader.img with no
+      # DRAM init in it. Both come from rkbin, so nothing has to be extracted
+      # from vendor firmware: the resulting idbloader is this DDR blob plus our
+      # own U-Boot SPL, which is what the stock rk3566 loader is too - it just
+      # carries a 2017.09 SPL instead.
+      # BL31 has no rk3566 variant; rk3568_bl31 is the rk356x-family TF-A and is
+      # correct here.
+      ROCKCHIP_TPL="$(get_build_dir rkbin)/bin/rk35/rk3566_ddr_1056MHz_v1.21.bin"
+      BL31="$(get_build_dir rkbin)/bin/rk35/rk3568_bl31_v1.44.elf"
+      [ -f "${ROCKCHIP_TPL}" ] || die "u-boot: RK3566 DDR blob missing at ${ROCKCHIP_TPL}"
+      [ -f "${BL31}" ] || die "u-boot: RK3566 BL31 missing at ${BL31}"
+      export ROCKCHIP_TPL BL31
+    fi
     DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm make mrproper
     DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm make $(${ROOT}/${SCRIPTS}/uboot_helper ${PROJECT} ${DEVICE} ${UBOOT_SYSTEM} config)
     if [[ "${DEVICE}" =~ RG351 ]]; then
       DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm _python_sysroot="${TOOLCHAIN}" _python_prefix=/ _python_exec_prefix=/ make HOSTCC="${HOST_CC}" HOSTLDFLAGS="-L${TOOLCHAIN}/lib" HOSTSTRIP="true" CONFIG_MKIMAGE_DTC_PATH="scripts/dtc/dtc"
     elif [[ "${DEVICE}" =~ RG552 ]]; then
+      DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm _python_sysroot="${TOOLCHAIN}" _python_prefix=/ _python_exec_prefix=/ LD_LIBRARY_PATH="${TOOLCHAIN}/lib:${LD_LIBRARY_PATH}" make HOSTCC="${HOST_CC}" HOSTCFLAGS="-I${TOOLCHAIN}/include" HOSTLDFLAGS="-L${TOOLCHAIN}/lib -Wl,-rpath,${TOOLCHAIN}/lib -lssl -lcrypto" HOSTSTRIP="true" CONFIG_MKIMAGE_DTC_PATH="scripts/dtc/dtc"
+    elif [[ "${DEVICE}" =~ (MLP1|RK3566) ]]; then
       DEBUG=${PKG_DEBUG} CROSS_COMPILE="${TARGET_KERNEL_PREFIX}" LDFLAGS="" ARCH=arm _python_sysroot="${TOOLCHAIN}" _python_prefix=/ _python_exec_prefix=/ LD_LIBRARY_PATH="${TOOLCHAIN}/lib:${LD_LIBRARY_PATH}" make HOSTCC="${HOST_CC}" HOSTCFLAGS="-I${TOOLCHAIN}/include" HOSTLDFLAGS="-L${TOOLCHAIN}/lib -Wl,-rpath,${TOOLCHAIN}/lib -lssl -lcrypto" HOSTSTRIP="true" CONFIG_MKIMAGE_DTC_PATH="scripts/dtc/dtc"
     fi
   fi

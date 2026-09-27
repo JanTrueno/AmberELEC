@@ -38,4 +38,7 @@ makeinstall_init() {
   find_file_path "splash/splash-480.png" && cp ${FOUND_PATH} ${INSTALL}/splash
   find_file_path "splash/splash-640.png" && cp ${FOUND_PATH} ${INSTALL}/splash
   find_file_path "splash/splash-1920.png" && cp ${FOUND_PATH} ${INSTALL}/splash
+  # init picks splash-<vres>.png and ply-image scales to the framebuffer without
+  # rotating, so a 720x960 portrait-scanned panel needs the pre-rotated asset.
+  find_file_path "splash/splash-720x960.png" && cp ${FOUND_PATH} ${INSTALL}/splash/splash-960.png
 }

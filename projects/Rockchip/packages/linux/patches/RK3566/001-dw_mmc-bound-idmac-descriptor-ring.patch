@@ -1,0 +1,80 @@
+Fix an IDMAC descriptor ring overrun in dw_mmc that panics the kernel.
+
+dw_mci_prepare_desc32()/64() walk "desc++" with no bound against the ring,
+which holds DESC_RING_BUF_SZ (one page) worth of descriptors. Staying inside
+it relies entirely on the limits dw_mci_init_slot() advertises to the block
+layer. Mainline keeps that invariant by capping max_seg_size at 0x1000, so
+one scatterlist segment always costs exactly one descriptor and max_segs ==
+ring_size bounds the walk. The Rockchip BSP raised max_seg_size to the full
+max_req_size, so a segment now costs ceil(len / 0x1000) descriptors: any
+segment whose length is not a multiple of 0x1000 wastes one, and a full-size
+request therefore always runs off the end of the ring.
+
+On MiniLoong Pocket1 this panics reproducibly during the first-boot rsync
+into /storage, leaving thousands of zero-byte files behind:
+
+  Internal error: Oops: 96000007 [#1] SMP
+  pc : dw_mci_idmac_start_dma+0x29c/0x32c
+  Call trace:
+   dw_mci_idmac_start_dma+0x29c/0x32c
+   __dw_mci_start_request+0x3ec/0x57c
+   dw_mci_tasklet_func+0xc0/0x450
+
+with x20 (desc) exactly host->sg_cpu + PAGE_SIZE - one past the last
+descriptor - after only 47 of the request's segments.
+
+Restore the mainline segment limit, and bound both descriptor walks so a
+future regression here returns -EINVAL instead of writing past the ring.
+--- a/drivers/mmc/host/dw_mmc.c	2026-09-22 18:12:59.385300790 +0200
++++ b/drivers/mmc/host/dw_mmc.c	2026-09-22 18:12:59.407302658 +0200
+@@ -632,6 +632,10 @@
+ 		u64 mem_addr = sg_dma_address(&data->sg[i]);
+ 
+ 		for ( ; length ; desc++) {
++			if (desc >= (struct idmac_desc_64addr *)host->sg_cpu +
++				    host->ring_size)
++				goto err_ring_full;
++
+ 			desc_len = (length <= DW_MCI_DESC_DATA_LENGTH) ?
+ 				   length : DW_MCI_DESC_DATA_LENGTH;
+ 
+@@ -678,6 +682,9 @@
+ 	desc_last->des0 |= IDMAC_DES0_LD;
+ 
+ 	return 0;
++err_ring_full:
++	dev_err(host->dev, "IDMAC descriptor ring overflow (%u segments)\n",
++		sg_len);
+ err_own_bit:
+ 	/* restore the descriptor chain as it's polluted */
+ 	dev_dbg(host->dev, "descriptor is still owned by IDMAC.\n");
+@@ -704,6 +711,10 @@
+ 		u32 mem_addr = sg_dma_address(&data->sg[i]);
+ 
+ 		for ( ; length ; desc++) {
++			if (desc >= (struct idmac_desc *)host->sg_cpu +
++				    host->ring_size)
++				goto err_ring_full;
++
+ 			desc_len = (length <= DW_MCI_DESC_DATA_LENGTH) ?
+ 				   length : DW_MCI_DESC_DATA_LENGTH;
+ 
+@@ -759,6 +770,9 @@
+ 	desc_last->des0 |= cpu_to_le32(IDMAC_DES0_LD);
+ 
+ 	return 0;
++err_ring_full:
++	dev_err(host->dev, "IDMAC descriptor ring overflow (%u segments)\n",
++		sg_len);
+ err_own_bit:
+ 	/* restore the descriptor chain as it's polluted */
+ 	dev_dbg(host->dev, "descriptor is still owned by IDMAC.\n");
+@@ -3013,7 +3027,7 @@
+ 		mmc->max_segs = host->ring_size;
+ 		mmc->max_blk_size = 65535;
+ 		mmc->max_req_size = DW_MCI_DESC_DATA_LENGTH * host->ring_size;
+-		mmc->max_seg_size = mmc->max_req_size;
++		mmc->max_seg_size = DW_MCI_DESC_DATA_LENGTH;
+ 		mmc->max_blk_count = mmc->max_req_size / 512;
+ 	} else if (host->use_dma == TRANS_MODE_EDMAC) {
+ 		mmc->max_segs = 64;

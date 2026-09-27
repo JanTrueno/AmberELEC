@@ -10,7 +10,12 @@ PKG_DEPENDS_TARGET="toolchain libdrm libpng linux libevdev librga openal-soft cu
 PKG_TOOLCHAIN="make"
 
 pre_configure_target() {
-  if [[ "${DEVICE}" =~ RG353 ]]; then
+  # RK3566 devices build against a 5.10 BSP kernel whose raw uapi headers are not
+  # self-contained: include/uapi/linux/stddef.h pulls in linux/compiler_types.h,
+  # which lives in include/linux and is not part of uapi. Putting include/uapi on
+  # the include path alone therefore fails to compile. The toolchain's sanitised
+  # kernel headers already provide what retrorun needs.
+  if [[ "${DEVICE}" =~ RG353 ]] || [[ "${DEVICE}" == "MLP1" ]]; then
     local INC_FLAGS="-I$(get_build_dir libdrm)/include/drm"
   else
     local INC_FLAGS="-I$(get_build_dir libdrm)/include/drm -I$(get_build_dir linux)/include/uapi -I$(get_build_dir linux)/tools/include"

@@ -4,9 +4,14 @@
 
 PKG_NAME="fbalpha2019"
 PKG_VERSION="0581797db6fdffd826086b053ced4b6b29bb6678"
-PKG_SHA256="96812000a349e413d63bc5ef04ab7a330bb0b4194047c048ed6ec549b8274936"
+# Upstream renamed libretro/fbalpha to libretro/beetle-finalarcade2019. GitHub
+# still redirects the old URL, but its generated tarballs embed the repo name as
+# the archive's top-level directory, so the bytes - and thus the sha256 - changed
+# even though PKG_VERSION still pins the same commit. Verified: the tarball's
+# 2035 files are byte-identical to commit 0581797d in the renamed repo.
+PKG_SHA256="8309b4af12c532e4454f07e46632a6c9bcd42ec54417e724948bfe2a5e83cf00"
 PKG_LICENSE="Non-commercial"
-PKG_SITE="https://github.com/libretro/fbalpha"
+PKG_SITE="https://github.com/libretro/beetle-finalarcade2019"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="Currently, FB Alpha supports games on Capcom CPS-1 and CPS-2 hardware, SNK Neo-Geo hardware, Toaplan hardware, Cave hardware, and various games on miscellaneous hardware."
